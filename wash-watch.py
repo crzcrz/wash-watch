@@ -15,8 +15,8 @@ def t(message):
 
 def e(message):
     sys.stderr.write(message)
-    sys.stdout.write('\n')
-    sys.stdout.flush()
+    sys.stderr.write('\n')
+    sys.stderr.flush()
 
 
 class Killer(object):
@@ -93,8 +93,6 @@ class TumbleDryState(object):
         self.started = time.time()
 
     def handle(self, current):
-        t('%s' % current)
-
         if current <= Miele.IDLE_CURRENT:
             pusher.push('Home', 'The washing machine has powered down.')
             return IdleState(self.pusher)
