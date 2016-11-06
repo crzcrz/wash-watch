@@ -140,7 +140,10 @@ class Watcher(object):
         t('None -> %s' % self.state.__class__.__name__)
         while not killer.kill_now:
             current = float(self.plug.current)
-            t('%s %s' % (time.time(), current))
+
+            if arguments.verbose:
+                t('%s %s' % (time.time(), current))
+
             if not self.transit(self.state.handle(current)):
                 self.transit(self.state.sleep())
 
@@ -152,6 +155,7 @@ if __name__ == '__main__':
     parser.add_argument('-p', action='store', dest='plug_password', help='Edimax smart plug password', required=True)
     parser.add_argument('-at', action='store', dest='app_token', help='Pushover application token', required=True)
     parser.add_argument('-ut', action='store', dest='user_token', help='Pushover user token', required=True)
+    parser.add_argument('--verbose', action='store_true', dest='verbose', help='Enable verbose tracing', default=False)
 
     arguments = parser.parse_args()
 
