@@ -73,14 +73,25 @@ class MachineOnState(object):
     def __init__(self, pusher):
         self.pusher = pusher
         self.started = time.time()
+        self.tumble_dry_guard = 0
 
     def handle(self, current):
         if current <= Miele.IDLE_CURRENT:
+            self.tumble_dry_guard = 0
             return IdleState(self.pusher)
         elif Miele.TUMBLE_DRY_FLOOR_CURRENT <= current <= Miele.TUMBLE_DRY_CEIL_CURRENT:
-            return TumbleDryState(self.pusher)
-
-        return self
+            """
+            To avoid accidental triggering when the water heater is switched on (~9A) or off
+            and the current is measured just when it transits through 1.5..5A.
+            """
+            self.tumble_dry_guard += 1
+            if self.tumble_dry_guard > 1:
+                return TumbleDryState(self.pusher)
+            else:
+                return self
+        else:
+            self.tumble_dry_guard = 0
+            return self
 
     def sleep(self):
         time.sleep(Miele.ON_POLL_INTERVAL)
