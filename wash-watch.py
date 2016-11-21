@@ -1,10 +1,22 @@
 #!/usr/bin/python
-from ediplug import smartplug
+import os
 import signal
 import time
 import sys
 import argparse
 import requests
+from ediplug import smartplug
+
+
+class Options(object):
+    IDLE_CURRENT = 0.06
+    TUMBLE_DRY_FLOOR_CURRENT = 1.5
+    TUMBLE_DRY_CEIL_CURRENT = 5.0
+    IDLE_POLL_INTERVAL = 60
+    ON_POLL_INTERVAL = 2
+    TUMBLE_DRY_DURATION = 600
+    ALIVE_FILE = '/var/tmp/wash-watch.alive'
+    ALIVE_TOUCH_INTERVAL = 120
 
 
 def t(message):
@@ -17,6 +29,11 @@ def e(message):
     sys.stderr.write(message)
     sys.stderr.write('\n')
     sys.stderr.flush()
+
+
+def touch_alive_file():
+    with open(Options.ALIVE_FILE, 'a'):
+        os.utime(Options.ALIVE_FILE, None)
 
 
 class Killer(object):
@@ -44,28 +61,19 @@ class Pushover(object):
             e('Failed to push a notification: Status-code=%s' % post_response.status_code)
 
 
-class Miele(object):
-    IDLE_CURRENT = 0.06
-    TUMBLE_DRY_FLOOR_CURRENT = 1.5
-    TUMBLE_DRY_CEIL_CURRENT = 5.0
-    IDLE_POLL_INTERVAL = 60
-    ON_POLL_INTERVAL = 2
-    TUMBLE_DRY_DURATION = 600
-
-
 class IdleState(object):
     def __init__(self, pusher):
         self.pusher = pusher
         self.started = time.time()
 
     def handle(self, current):
-        if current > Miele.IDLE_CURRENT:
+        if current > Options.IDLE_CURRENT:
             return MachineOnState(self.pusher)
 
         return self
 
     def sleep(self):
-        time.sleep(Miele.IDLE_POLL_INTERVAL)
+        time.sleep(Options.IDLE_POLL_INTERVAL)
         return self
 
 
@@ -76,10 +84,10 @@ class MachineOnState(object):
         self.tumble_dry_guard = 0
 
     def handle(self, current):
-        if current <= Miele.IDLE_CURRENT:
+        if current <= Options.IDLE_CURRENT:
             self.tumble_dry_guard = 0
             return IdleState(self.pusher)
-        elif Miele.TUMBLE_DRY_FLOOR_CURRENT <= current <= Miele.TUMBLE_DRY_CEIL_CURRENT:
+        elif Options.TUMBLE_DRY_FLOOR_CURRENT <= current <= Options.TUMBLE_DRY_CEIL_CURRENT:
             """
             To avoid accidental triggering when the water heater is switched on (~9A) or off
             and the current is measured just when it transits through 1.5..5A.
@@ -94,7 +102,7 @@ class MachineOnState(object):
             return self
 
     def sleep(self):
-        time.sleep(Miele.ON_POLL_INTERVAL)
+        time.sleep(Options.ON_POLL_INTERVAL)
         return self
 
 
@@ -104,20 +112,20 @@ class TumbleDryState(object):
         self.started = time.time()
 
     def handle(self, current):
-        if current <= Miele.IDLE_CURRENT:
+        if current <= Options.IDLE_CURRENT:
             pusher.push('Home', 'The washing machine has powered down.')
             return IdleState(self.pusher)
-        elif Miele.TUMBLE_DRY_FLOOR_CURRENT <= current <= Miele.TUMBLE_DRY_CEIL_CURRENT:
+        elif Options.TUMBLE_DRY_FLOOR_CURRENT <= current <= Options.TUMBLE_DRY_CEIL_CURRENT:
             self.started = time.time()
 
         return self
 
     def sleep(self):
-        if (self.started + Miele.TUMBLE_DRY_DURATION) <= time.time():
+        if (self.started + Options.TUMBLE_DRY_DURATION) <= time.time():
             pusher.push('Home', 'The washing machine has finished.')
             return MachineOnState(self.pusher)
 
-        time.sleep(Miele.ON_POLL_INTERVAL)
+        time.sleep(Options.ON_POLL_INTERVAL)
         return self
 
 
@@ -138,7 +146,14 @@ class Watcher(object):
 
     def spin(self):
         t('None -> %s' % self.state.__class__.__name__)
+
+        last_touch = 0.0
+
         while not killer.kill_now:
+            if (last_touch + Options.ALIVE_TOUCH_INTERVAL) <= time.time():
+                touch_alive_file()
+                last_touch = time.time()
+
             current = float(self.plug.current)
 
             if arguments.verbose:
