@@ -12,6 +12,7 @@ run_test ()
     systemctl is-active --quiet ${service}
     
     if [ $? -eq 0 ]; then
+        sleep 1
         alive=$(find ${file} -cmin +5 2>/dev/null)
         
         if [ -f ${file} -a -z ${alive} ]; then
